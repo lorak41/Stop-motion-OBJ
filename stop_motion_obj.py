@@ -1,7 +1,7 @@
 # ##### BEGIN GPL LICENSE BLOCK #####
 #
 #   Stop motion OBJ: A Mesh sequence importer for Blender
-#   Copyright (C) 2016-2019  Justin Jensen
+#   Copyright (C) 2016-2018  Justin Jensen
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -23,8 +23,8 @@ bl_info = {
     "name" : "Stop motion OBJ",
     "description": "Import a sequence of OBJ (or STL or PLY) files and display them each as a single frame of animation. This add-on also supports the .STL and .PLY file formats.",
     "author": "Justin Jensen",
-    "version": (2, 0, 0),
-    "blender": (2, 80, 0),
+    "version": (0, 2),
+    "blender": (2, 79, 0),
     "location": "View 3D > Add > Mesh > Mesh Sequence",
     "warning": "",
     "category": "Add Mesh",
@@ -49,7 +49,7 @@ MSC = None
 
 def deselectAll():
     for ob in bpy.context.scene.objects:
-        ob.select_set(state=False)
+        ob.select = False
 
 #set the frame number for all mesh sequence objects
 #COMMENT THIS persistent OUT WHEN RUNNING FROM THE TEXT EDITOR
@@ -63,56 +63,25 @@ def updateFrame(dummy):
 def updateStartFrame(self, context):
     updateFrame(0)
     return None
-
-def countMatchingFiles(_directory, _filePrefix, _fileExtension):
-    full_filepath = os.path.join(_directory, _filePrefix + '*.' + _fileExtension)
-    print(full_filepath)
-    files = glob.glob(full_filepath)
-    print(files)
-    return len(files)
-
-def fileExtensionFromTypeNumber(_typeNumber):
-    #OBJ
-    if(_typeNumber == 0):
-        return 'obj'
-    #STL
-    elif(_typeNumber == 1):
-        return 'stl'
-    #PLY
-    elif(_typeNumber == 2):
-        return 'ply'
-    return ''
-
-def importFuncFromTypeNumber(_typeNumber):
-    # OBJ
-    if (_typeNumber == 0):
-        return bpy.ops.import_scene.obj
-    # STL
-    elif (_typeNumber == 1):
-        return bpy.ops.import_mesh.stl
-    # PLY
-    elif (_typeNumber == 2):
-        return bpy.ops.import_mesh.ply
-    return None
     
 class MeshSequenceSettings(bpy.types.PropertyGroup):
-    dirPath: bpy.props.StringProperty(
+    dirPath = bpy.props.StringProperty(
         name="Root Folder",
         description="Only .OBJ files will be listed",
         subtype="DIR_PATH")
-    fileName: bpy.props.StringProperty(name='File Name')
-    startFrame: bpy.props.IntProperty(
+    fileName = bpy.props.StringProperty(name='File Name')
+    startFrame = bpy.props.IntProperty(
         name='Start Frame',
         update=updateStartFrame,
         default=1)
     #A long list of mesh names
-    meshNames: bpy.props.StringProperty()
-    numMeshes: bpy.props.IntProperty()
-    initialized: bpy.props.BoolProperty(default=False)
-    loaded: bpy.props.BoolProperty(default=False)
+    meshNames = bpy.props.StringProperty()
+    numMeshes = bpy.props.IntProperty()
+    initialized = bpy.props.BoolProperty(default=False)
+    loaded = bpy.props.BoolProperty(default=False)
     
     #out-of-range frame mode
-    frameMode: bpy.props.EnumProperty(
+    frameMode = bpy.props.EnumProperty(
         items = [('0', 'Blank', 'Object disappears when frame is out of range'),
                 ('1', 'Extend', 'First and last frames are duplicated'),
                 ('2', 'Repeat', 'Repeat the animation'),
@@ -121,13 +90,19 @@ class MeshSequenceSettings(bpy.types.PropertyGroup):
         default='1')
     
     #material mode (one material total or one material per frame)
-    perFrameMaterial: bpy.props.BoolProperty(
+    perFrameMaterial = bpy.props.BoolProperty(
         name='Material per Frame',
+        default=False
+    )
+
+    #Use scaling for keyframes
+    isUsingScale = bpy.props.BoolProperty(
+        name='Use scaling for keyframes',
         default=False
     )
     
     #playback speed
-    speed: bpy.props.FloatProperty(
+    speed = bpy.props.FloatProperty(
         name='Playback Speed',
         min=0.0001,
         soft_min=0.01,
@@ -137,7 +112,7 @@ class MeshSequenceSettings(bpy.types.PropertyGroup):
     )
     
     #the file format for files in the sequence (OBJ, STL, or PLY)
-    fileFormat: bpy.props.EnumProperty(
+    fileFormat = bpy.props.EnumProperty(
         items = [('0', 'OBJ', 'Wavefront OBJ'),
                 ('1', 'STL', 'STereoLithography'),
                 ('2', 'PLY', 'Stanford PLY')],
@@ -157,86 +132,86 @@ class MeshSequenceController:
         self.freeUnusedMeshes()
         
     def newMeshSequence(self):
-        #create a mesh object
-        bpy.ops.object.add(type='MESH')
-        #get a reference to it
-        theObj = bpy.context.object
-        #change its name to 'sequence'
-        theObj.name = 'sequence'
-        #grab its mesh data and change its name to 'emptyMesh'
-        theMesh = theObj.data
-        theMesh.name = 'emptyMesh'
-        #give the empty mesh a fake user
-        theMesh.use_fake_user = True
+        #create an empty mesh
+        emptyMesh = bpy.data.meshes.new('emptyMesh')
+        #give it a fake user
+        emptyMesh.use_fake_user = True
         #make sure it knows it's part of a mesh sequence
-        theMesh.inMeshSequence = True
-        #add the mesh's name to the object's mesh_sequence_settings
-        theObj.mesh_sequence_settings.meshNames = theMesh.name + '/'
+        emptyMesh.inMeshSequence = True
+        #create a new object containing the empty mesh
+        theObj = bpy.data.objects.new("sequence", emptyMesh)
+        theObj.mesh_sequence_settings.meshNames = emptyMesh.name + '/'
+        #link the object to the scene
+        scn = bpy.context.scene
+        scn.objects.link(theObj)
         
         #deselect all other objects
         deselectAll()
         
         #select the object
-        scn = bpy.context.scene
-        #scn.objects.active = theObj
-        theObj.select_set(state=True)
+        scn.objects.active = theObj
+        theObj.select = True
         
         theObj.mesh_sequence_settings.initialized = True
         return theObj
     
     def loadSequenceFromFile(self, _obj, _dir, _file):
-        # make sure the empty sequence object is deselected
-        deselectAll()
-
-        # error out early if there are no files that match the file prefix
-        fileExtension = fileExtensionFromTypeNumber(int(_obj.mesh_sequence_settings.fileFormat))
-        if countMatchingFiles(_dir, _file, fileExtension) == 0:
-            return 0
-        
         scn = bpy.context.scene
-        # get the file format
+        #get the file format
+        format = 'obj'
         formatidx = int(_obj.mesh_sequence_settings.fileFormat)
-        importFunc = importFuncFromTypeNumber(int(_obj.mesh_sequence_settings.fileFormat))
-
-        # combine the file directory with the filename and the .obj extension
-        full_dirpath = bpy.path.abspath(_dir)
-        full_filepath = os.path.join(full_dirpath, _file + '*.' + fileExtension)
-
+        importFunc = None
+        #OBJ
+        if(formatidx == 0):
+            format = 'obj'
+            importFunc = bpy.ops.import_scene.obj
+        #STL
+        elif(formatidx == 1):
+            format = 'stl'
+            importFunc = bpy.ops.import_mesh.stl
+        #PLY
+        elif(formatidx == 2):
+            format = 'ply'
+            importFunc = bpy.ops.import_mesh.ply
+        #combine the file directory with the filename and the .obj extension
+        full_filepath = os.path.join(_dir, _file + '*.' + format)
+        print(full_filepath)
         numFrames = 0
         unsortedFiles = glob.glob(full_filepath)
         # Sort the given list in the way that humans expect.
         sortedFiles = sorted(unsortedFiles, key=alphanumKey)
 
-        # for each file that matches the glob query:
+        #for each file that matches the glob query:
         for file in sortedFiles:
-            # import the mesh file
+            #import the mesh file
             importFunc(filepath = file)
-            # get a reference to it
+            #get a reference to it
             tmpObject = bpy.context.selected_objects[0]
-            tmpMesh = tmpObject.data    # don't copy it; just copy the pointer. This cuts memory usage in half.
+            tmpMesh = tmpObject.data    #don't copy it; just copy the pointer. This cuts memory usage in half.
             tmpMesh.use_fake_user = True
             tmpMesh.inMeshSequence = True
-            # deselect all objects
+            #deselect all objects
             deselectAll()
-            # select the object
-            tmpObject.select_set(state=True)
-            # delete it
+            #select the object
+            tmpObject.select = True
+            #delete it
             bpy.ops.object.delete()
-            # add the new mesh's name to the sequence object's text property
-            # add the '/' character as a delimiter
-            # http://stackoverflow.com/questions/1976007/what-characters-are-forbidden-in-windows-and-linux-directory-names
+            #add the new mesh's name to the sequence object's text property
+            #add the '/' character as a delimiter
+            #http://stackoverflow.com/questions/1976007/what-characters-are-forbidden-in-windows-and-linux-directory-names
             _obj.mesh_sequence_settings.meshNames += tmpMesh.name + '/'
             numFrames+=1
         
         _obj.mesh_sequence_settings.numMeshes = numFrames+1
         if(numFrames > 0):
-            # remove the last '/' from the string
+            #remove the last '/' from the string
             _obj.mesh_sequence_settings.meshNames = _obj.mesh_sequence_settings.meshNames[:-1]
-            # set the sequence object's mesh to meshes[1]
+            #set the sequence object's mesh to meshes[1]
             self.setFrameObj(_obj, scn.frame_current)
             
-            # select the sequence object
-            _obj.select_set(state=True)
+            #select the sequence object
+            scn.objects.active = _obj
+            _obj.select = True
             
             _obj.mesh_sequence_settings.loaded = True
         
@@ -266,34 +241,6 @@ class MeshSequenceController:
         
         _obj.mesh_sequence_settings.loaded = True
     
-    def reloadSequenceFromFile(self, _object, _directory, _filePrefix):
-        # if there are no files that match the file prefix, error out early before making changes
-        fileExtension = fileExtensionFromTypeNumber(int(_object.mesh_sequence_settings.fileFormat))
-        if countMatchingFiles(_directory, _filePrefix, fileExtension) == 0:
-            return 0
-        
-        # mark the existing meshes for cleanup (keep the first 'emptyMesh' one)
-        for meshName in _object.mesh_sequence_settings.meshNames.split('/')[1:]:
-            # get rid of its fake user
-            bpy.data.meshes[meshName].use_fake_user = False
-
-            # set its inMeshSequence to false
-            bpy.data.meshes[meshName].inMeshSequence = False
-
-        # re-initialize _object.meshNames
-        _object.mesh_sequence_settings.meshNames = 'emptyMesh/'
-
-        # temporarily set the speed to 1 while we reload
-        originalSpeed = _object.mesh_sequence_settings.speed
-        _object.mesh_sequence_settings.speed = 1.0
-
-        numMeshes = self.loadSequenceFromFile(_object, _directory, _filePrefix)
-
-        # set the speed back to its previous value
-        _object.mesh_sequence_settings.speed = originalSpeed
-
-        return numMeshes
-
     def getMesh(self, _obj, _idx):
         #get the object's meshNames
         #split it into individual mesh names
@@ -330,7 +277,9 @@ class MeshSequenceController:
                 idx = numFrames
         #2: Repeat
         elif(frameMode == 2):
-            idx = ((idx - 1) % (numFrames)) + 1
+            idx -= 1
+            idx = idx % (numFrames)
+            idx += 1
         #3: Bounce
         elif(frameMode == 3):
             idx -= 1
@@ -362,7 +311,8 @@ class MeshSequenceController:
         #deselect everything in the scene
         deselectAll()
         #select the sequence object
-        _obj.select_set(state=True)
+        scn.objects.active = _obj
+        _obj.select = True
         #grab the current mesh so we can put it back later
         origMesh = _obj.data
         #for each mesh in the sequence
@@ -382,7 +332,6 @@ class MeshSequenceController:
     #create a separate object for each mesh in the array, each visible for only one frame
     def bakeSequence(self, _obj):
         scn = bpy.context.scene
-        activeCollection = bpy.context.collection
         #create an empty object
         bpy.ops.object.empty_add(type='PLAIN_AXES')
         containerObj = bpy.context.active_object
@@ -418,23 +367,34 @@ class MeshSequenceController:
             mesh.inMeshSequence = False
             #create an object for the mesh and add it to the scene
             tmpObj = bpy.data.objects.new('o_' + mesh.name, mesh)
-            activeCollection.objects.link(tmpObj)
+            scn.objects.link(tmpObj)
             #remove the fake user from the mesh
             mesh.use_fake_user = False
             #add a dictionary entry to meshToObject, the mesh => the object
             meshToObject[mesh] = tmpObj
             #in the object, add keyframes at frames 0 and the last frame of the animation:
             #set object.hide to True
-            tmpObj.hide_viewport = True
-            tmpObj.keyframe_insert(data_path='hide_viewport', frame=scn.frame_start)
-            tmpObj.keyframe_insert(data_path='hide_viewport', frame=scn.frame_end)
-            #set object.hide_render to True
-            tmpObj.hide_render = True
-            tmpObj.keyframe_insert(data_path='hide_render', frame=scn.frame_start)
-            tmpObj.keyframe_insert(data_path='hide_render', frame=scn.frame_end)
-            #set the empty object as this object's parent
-            tmpObj.parent = containerObj
-        
+            if _obj.mesh_sequence_settings.isUsingScale == False:
+                tmpObj.hide = True
+                tmpObj.keyframe_insert(data_path='hide', frame=scn.frame_start)
+                tmpObj.keyframe_insert(data_path='hide', frame=scn.frame_end)
+                #set object.hide_render to True
+                tmpObj.hide_render = True
+                tmpObj.keyframe_insert(data_path='hide_render', frame=scn.frame_start)
+                tmpObj.keyframe_insert(data_path='hide_render', frame=scn.frame_end)
+                #set the empty object as this object's parent
+                tmpObj.parent = containerObj
+            else:
+                tmpObj.scale[0] = 0
+                tmpObj.scale[1] = 0
+                tmpObj.scale[2] = 0
+                tmpObj.keyframe_insert(data_path='scale', frame=scn.frame_start)
+                tmpObj.keyframe_insert(data_path='scale', frame=scn.frame_end)
+
+                #set object.hide_render to True
+
+                tmpObj.parent = containerObj
+
         #If this is a single-material sequence, make sure the material is copied to the whole sequence
         #This assumes that the first mesh in the sequence has a material
         if(_obj.mesh_sequence_settings.perFrameMaterial == False):
@@ -454,28 +414,58 @@ class MeshSequenceController:
         #for each frame of the animation:
         for frameNum in range(scn.frame_start, scn.frame_end + 1):
             #figure out which mesh is visible
-            idx = self.getMeshIdxFromFrame(_obj, frameNum)
-            frameMesh = self.getMesh(_obj, idx)
-            #use the dictionary to find which object the mesh belongs to
-            frameObj = meshToObject[frameMesh]
-            #add two keyframes to the object at the current frame:
-            #set object.hide to False
-            frameObj.hide_viewport = False
-            frameObj.keyframe_insert(data_path='hide_viewport', frame=frameNum)
-            #set object.hide_render to False
-            frameObj.hide_render = False
-            frameObj.keyframe_insert(data_path='hide_render', frame=frameNum)
-            #add two keyframes to the object at the next frame:
-            #set object.hide to True
-            frameObj.hide_viewport = True
-            frameObj.keyframe_insert(data_path='hide_viewport', frame=frameNum+1)
-            #set object.hide_render to True
-            frameObj.hide_render = True
-            frameObj.keyframe_insert(data_path='hide_render', frame=frameNum+1)
-        
+            if _obj.mesh_sequence_settings.isUsingScale == False:
+                idx = self.getMeshIdxFromFrame(_obj, frameNum)
+                frameMesh = self.getMesh(_obj, idx)
+                #use the dictionary to find which object the mesh belongs to
+                frameObj = meshToObject[frameMesh]
+                #add two keyframes to the object at the current frame:
+                #set object.hide to False
+                frameObj.hide = False
+                frameObj.keyframe_insert(data_path='hide', frame=frameNum)
+                #set object.hide_render to False
+                frameObj.hide_render = False
+                frameObj.keyframe_insert(data_path='hide_render', frame=frameNum)
+                #add two keyframes to the object at the next frame:
+                #set object.hide to True
+                frameObj.hide = True
+                frameObj.keyframe_insert(data_path='hide', frame=frameNum+1)
+                #set object.hide_render to True
+                frameObj.hide_render = True
+                frameObj.keyframe_insert(data_path='hide_render', frame=frameNum+1)
+            else:
+                idx = self.getMeshIdxFromFrame(_obj, frameNum)
+                frameMesh = self.getMesh(_obj, idx)
+                #use the dictionary to find which object the mesh belongs to
+                frameObj = meshToObject[frameMesh]
+                #add two keyframes to the object at the current frame:
+                #set object.hide to False
+                # frameObj.hide = False
+                frameObj.scale[0] = 0
+                frameObj.scale[1] = 0
+                frameObj.scale[2] = 0
+                frameObj.keyframe_insert(data_path='scale', frame=frameNum)
+                #set object.hide_render to False
+                # frameObj.hide_render = False
+                # frameObj.keyframe_insert(data_path='hide_render', frame=frameNum)
+                #add two keyframes to the object at the next frame:
+                #set object.hide to True
+                frameObj.scale[0] = 1
+                frameObj.scale[1] = 1
+                frameObj.scale[2] = 1
+                frameObj.keyframe_insert(data_path='scale', frame=frameNum+1)
+                frameObj.scale[0] = 0
+                frameObj.scale[1] = 0
+                frameObj.scale[2] = 0
+                frameObj.keyframe_insert(data_path='scale', frame=frameNum+2)
+                #set object.hide_render to True
+                # frameObj.hide_render = True
+                # frameObj.keyframe_insert(data_path='hide_render', frame=frameNum + 1)
+                
         #delete the sequence object
         deselectAll()
-        _obj.select_set(state=True)
+        scn.objects.active = _obj
+        _obj.select = True
         bpy.ops.object.delete()
     
     def freeUnusedMeshes(self):
@@ -544,30 +534,7 @@ class LoadMeshSequence(bpy.types.Operator):
         
         num = MSC.loadSequenceFromFile(obj, dirPath, fileName)
         if(num == 0):
-            self.report({'ERROR'}, "No matching files found. Make sure the Root Folder, File Name, and File Format are correct.")
-            return {'CANCELLED'}
-        
-        return {'FINISHED'}
-
-class ReloadMeshSequence(bpy.types.Operator):
-    """Reload From Disk"""
-    bl_idname = "ms.reload_mesh_sequence"
-    bl_label = "Reload From Disk"
-    bl_options = {'UNDO'}
-
-    def execute(self, context):
-        global MSC
-        obj = context.object
-
-        # get the object's file path
-        dirPath = obj.mesh_sequence_settings.dirPath
-
-        # get the object's filename
-        fileName = obj.mesh_sequence_settings.fileName
-
-        num = MSC.reloadSequenceFromFile(obj, dirPath, fileName)
-        if (num == 0):
-            self.report({'ERROR'}, "Invalid file path. Make sure the Root Folder, File Name, and File Format are correct.")
+            self.report({'ERROR'}, "Invalid file path. Make sure the Root Folder, File Name, and File Format are correct. Make sure to uncheck 'Relative Path'")
             return {'CANCELLED'}
         
         return {'FINISHED'}
@@ -626,7 +593,7 @@ class MeshSequencePanel(bpy.types.Panel):
         if(objSettings.initialized == True):
             #Only show options for loading a sequence if one hasn't been loaded yet
             if(objSettings.loaded == False):
-                layout.label(text= "Load Mesh Sequence:", icon='FILE_FOLDER')
+                layout.label("Load Mesh Sequence:", icon='FILE_FOLDER')
                 #path to directory
                 row = layout.row()
                 row.prop(objSettings, "dirPath")
@@ -642,6 +609,10 @@ class MeshSequencePanel(bpy.types.Panel):
                 #material mode (one material total or one material per frame)
                 row = layout.row()
                 row.prop(objSettings, "perFrameMaterial")
+                #material mode (one material total or one material per frame)
+                
+                row = layout.row()
+                row.prop(objSettings, "isUsingScale")
                 
                 #button for loading
                 row = layout.row()
@@ -659,15 +630,11 @@ class MeshSequencePanel(bpy.types.Panel):
                 #playback speed
                 row = layout.row()
                 row.prop(objSettings, "speed")
-
-                # Reload From Disk button
-                row = layout.row()
-                row.operator("ms.reload_mesh_sequence")
                 
                 #Show the shading buttons only if a sequence has been loaded
                 layout.row().separator()
                 row = layout.row(align=True)
-                row.label(text="Shading:")
+                row.label("Shading:")
                 row.operator("ms.batch_shade_smooth")
                 row.operator("ms.batch_shade_flat")
                 
@@ -688,12 +655,11 @@ def register():
     bpy.app.handlers.frame_change_pre.append(updateFrame)
     bpy.utils.register_class(AddMeshSequence)
     bpy.utils.register_class(LoadMeshSequence)
-    bpy.utils.register_class(ReloadMeshSequence)
     bpy.utils.register_class(BatchShadeSmooth)
     bpy.utils.register_class(BatchShadeFlat)
     bpy.utils.register_class(BakeMeshSequence)
     bpy.utils.register_class(MeshSequencePanel)
-    bpy.types.VIEW3D_MT_mesh_add.append(menu_func)
+    bpy.types.INFO_MT_mesh_add.append(menu_func)
     #for running the script, instead of installing the add-on
     #UNCOMMENT THIS FUNCTION CALL WHEN RUNNING FROM THE TEXT EDITOR
     #initSequenceController(0)
@@ -703,12 +669,11 @@ def unregister():
     bpy.app.handlers.frame_change_pre.remove(updateFrame)
     bpy.utils.unregister_class(AddMeshSequence)
     bpy.utils.unregister_class(LoadMeshSequence)
-    bpy.utils.unregister_class(ReloadMeshSequence)
     bpy.utils.unregister_class(BatchShadeSmooth)
     bpy.utils.unregister_class(BatchShadeFlat)
     bpy.utils.unregister_class(BakeMeshSequence)
     bpy.utils.unregister_class(MeshSequencePanel)
-    bpy.types.VIEW3D_MT_mesh_add.remove(menu_func)
+    bpy.types.INFO_MT_mesh_add.remove(menu_func)
 
 if __name__ == "__main__":
     register()
